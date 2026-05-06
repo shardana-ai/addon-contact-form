@@ -1,0 +1,63 @@
+{
+  "$schema": "https://shardana.ai/schemas/addon-manifest.json",
+  "id": "contact-form",
+  "name": "Heroic Contact Form",
+  "version": "0.1.0",
+  "description": "Embeddable contact form that posts submissions to a Lambda + Mailgun backend.",
+  "injection": "script",
+  "src": "https://forms.shardana.ai/v1/widget.js",
+  "params": {
+    "formId": {
+      "type": "string",
+      "required": true,
+      "description": "Unique form identifier registered in the admin panel; the Lambda refuses unknown ids."
+    },
+    "submitUrl": {
+      "type": "string",
+      "required": true,
+      "description": "Lambda endpoint that receives the JSON submission."
+    },
+    "fields": {
+      "type": "string",
+      "default": "name,email,message",
+      "description": "Comma-separated list of visible fields. Allowed: name, email, phone, message."
+    },
+    "required": {
+      "type": "string",
+      "default": "name,email,message",
+      "description": "Comma-separated subset of fields that are required."
+    },
+    "locale": {
+      "type": "string",
+      "enum": ["it", "en", "de", "fr", "es"],
+      "default": "it",
+      "description": "Locale for built-in labels and validation messages."
+    },
+    "theme": {
+      "type": "string",
+      "enum": ["light", "dark"],
+      "default": "light",
+      "description": "Visual variant matched to the host landing's appearance."
+    },
+    "target": {
+      "type": "string",
+      "description": "CSS selector of the mount node (e.g. '#contact-section'). Defaults to the script tag's parent."
+    },
+    "successMessage": {
+      "type": "string",
+      "description": "Override the localized success message."
+    },
+    "errorMessage": {
+      "type": "string",
+      "description": "Override the localized error message."
+    },
+    "honeypotName": {
+      "type": "string",
+      "default": "website",
+      "description": "Hidden field name used as a bot honeypot."
+    }
+  },
+  "homepage": "https://github.com/shardana-ai/addon-contact-form",
+  "maintainer": "shardana.ai",
+  "license": "MIT"
+}

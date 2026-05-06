@@ -1,0 +1,56 @@
+# Serverless Framework config for the contact-form Lambda.
+#
+# Deploy:
+#   pnpm install
+#   pnpm build
+#   serverless deploy --stage prod --region eu-south-1
+#
+# The function expects the build output at dist/lambda/submit.cjs. Run
+# `pnpm build` (which calls tsup) before `serverless deploy`.
+service: shardana-contact-form
+
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${opt:region, 'eu-south-1'}
+  stage: ${opt:stage, 'prod'}
+  memorySize: 256
+  timeout: 10
+  architecture: arm64
+  logRetentionInDays: 30
+  httpApi:
+    cors:
+      allowedOrigins:
+        - https://landing.shardana.ai
+        - https://*.landing.shardana.ai
+      allowedMethods:
+        - POST
+        - OPTIONS
+      allowedHeaders:
+        - Content-Type
+      maxAge: 600
+  environment:
+    MAILGUN_DOMAIN: ${env:MAILGUN_DOMAIN}
+    MAILGUN_API_KEY: ${env:MAILGUN_API_KEY}
+    MAILGUN_BASE_URL: ${env:MAILGUN_BASE_URL, ''}
+    ALLOWED_ORIGINS: ${env:ALLOWED_ORIGINS, '*'}
+    FORM_REGISTRY: ${env:FORM_REGISTRY}
+
+package:
+  individually: true
+  patterns:
+    - "!**"
+    - "dist/lambda/**"
+
+functions:
+  submit:
+    handler: dist/lambda/submit.handler
+    events:
+      - httpApi:
+          path: /v1/submit
+          method: post
+      - httpApi:
+          path: /v1/submit
+          method: options
