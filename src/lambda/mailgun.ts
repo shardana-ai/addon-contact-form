@@ -6,6 +6,29 @@
 
 import type { ValidatedSubmission } from "../shared/payload.js";
 
+export interface EmailTemplate {
+  /**
+   * Mustache-style template for the email subject. Available placeholders:
+   *   {sender}   — name → email → "anonymous"
+   *   {name}     — submitted name (or empty)
+   *   {email}    — submitted email (or empty)
+   *   {formId}   — formId or empty
+   *   {brand}    — config.brandName or empty
+   * Default: `[Heroic] Nuovo messaggio da {sender}` (with ` ({formId})` appended when formId is set).
+   */
+  subjectTemplate?: string;
+  /**
+   * Brand / business name shown in the email HTML footer ("Inviato dal sito
+   * di {brand}"). When unset, no footer is emitted. Also available as
+   * `{brand}` in `subjectTemplate`.
+   */
+  brandName?: string;
+  /** Free-form preamble inserted at the top of the email body (text + html). */
+  intro?: string;
+  /** Locale used to pick built-in field labels. Defaults to "it". */
+  locale?: string;
+}
+
 export interface MailgunConfig {
   domain: string;
   apiKey: string;
@@ -17,6 +40,8 @@ export interface MailgunConfig {
   to: string | string[];
   /** Optional Reply-To override. Defaults to the submitter's email when present. */
   replyTo?: string;
+  /** Optional content customisation (subject template, brand name). */
+  template?: EmailTemplate;
 }
 
 export interface BuiltEmail {
@@ -45,6 +70,72 @@ function joinAddresses(value: string | string[]): string {
   return Array.isArray(value) ? value.join(", ") : value;
 }
 
+type LabelKey = "form" | "name" | "email" | "phone" | "message" | "footer";
+
+const LABELS: Record<string, Record<LabelKey, string>> = {
+  it: {
+    form: "Form",
+    name: "Nome",
+    email: "Email",
+    phone: "Telefono",
+    message: "Messaggio",
+    footer: "Inviato dal sito di",
+  },
+  en: {
+    form: "Form",
+    name: "Name",
+    email: "Email",
+    phone: "Phone",
+    message: "Message",
+    footer: "Sent from the website of",
+  },
+  de: {
+    form: "Form",
+    name: "Name",
+    email: "E-Mail",
+    phone: "Telefon",
+    message: "Nachricht",
+    footer: "Gesendet von der Website von",
+  },
+  fr: {
+    form: "Form",
+    name: "Nom",
+    email: "Email",
+    phone: "Téléphone",
+    message: "Message",
+    footer: "Envoyé depuis le site de",
+  },
+  es: {
+    form: "Form",
+    name: "Nombre",
+    email: "Email",
+    phone: "Teléfono",
+    message: "Mensaje",
+    footer: "Enviado desde el sitio de",
+  },
+};
+
+function pickLabels(locale: string | undefined): Record<LabelKey, string> {
+  if (!locale) return LABELS.it!;
+  const key = locale.slice(0, 2).toLowerCase();
+  return LABELS[key] ?? LABELS.it!;
+}
+
+function senderLabel(submission: ValidatedSubmission, locale: string | undefined): string {
+  if (submission.name) return submission.name;
+  if (submission.email) return submission.email;
+  return locale?.startsWith("en") ? "anonymous" : "anonimo";
+}
+
+const PLACEHOLDER_RE = /\{(sender|name|email|formId|brand)\}/g;
+
+export function renderSubject(
+  template: string,
+  vars: { sender: string; name: string; email: string; formId: string; brand: string },
+): string {
+  return template.replace(PLACEHOLDER_RE, (_, key: string) => vars[key as keyof typeof vars] ?? "");
+}
+
 /**
  * Build the Mailgun message body. Pure function — no network — so tests can
  * assert the exact email layout independently of the HTTP transport.
@@ -52,29 +143,38 @@ function joinAddresses(value: string | string[]): string {
 export function buildEmail(submission: ValidatedSubmission, config: MailgunConfig): BuiltEmail {
   const lines: string[] = [];
   const htmlLines: string[] = [];
+  const template = config.template ?? {};
+  const locale = template.locale ?? (submission.metadata?.locale ?? "it");
+  const labels = pickLabels(locale);
+
+  if (template.intro) {
+    lines.push(template.intro);
+    lines.push("");
+    htmlLines.push(`<p>${escapeHtml(template.intro).replace(/\n/g, "<br>")}</p>`);
+  }
 
   if (submission.formId) {
-    lines.push(`Form: ${submission.formId}`);
-    htmlLines.push(`<p><strong>Form:</strong> ${escapeHtml(submission.formId)}</p>`);
+    lines.push(`${labels.form}: ${submission.formId}`);
+    htmlLines.push(`<p><strong>${labels.form}:</strong> ${escapeHtml(submission.formId)}</p>`);
   }
 
   if (submission.name) {
-    lines.push(`Nome: ${submission.name}`);
-    htmlLines.push(`<p><strong>Nome:</strong> ${escapeHtml(submission.name)}</p>`);
+    lines.push(`${labels.name}: ${submission.name}`);
+    htmlLines.push(`<p><strong>${labels.name}:</strong> ${escapeHtml(submission.name)}</p>`);
   }
   if (submission.email) {
-    lines.push(`Email: ${submission.email}`);
-    htmlLines.push(`<p><strong>Email:</strong> ${escapeHtml(submission.email)}</p>`);
+    lines.push(`${labels.email}: ${submission.email}`);
+    htmlLines.push(`<p><strong>${labels.email}:</strong> ${escapeHtml(submission.email)}</p>`);
   }
   if (submission.phone) {
-    lines.push(`Telefono: ${submission.phone}`);
-    htmlLines.push(`<p><strong>Telefono:</strong> ${escapeHtml(submission.phone)}</p>`);
+    lines.push(`${labels.phone}: ${submission.phone}`);
+    htmlLines.push(`<p><strong>${labels.phone}:</strong> ${escapeHtml(submission.phone)}</p>`);
   }
   if (submission.message) {
     lines.push("");
     lines.push(submission.message);
     htmlLines.push(
-      `<p><strong>Messaggio:</strong></p><p>${escapeHtml(submission.message).replace(/\n/g, "<br>")}</p>`,
+      `<p><strong>${labels.message}:</strong></p><p>${escapeHtml(submission.message).replace(/\n/g, "<br>")}</p>`,
     );
   }
 
@@ -89,9 +189,26 @@ export function buildEmail(submission: ValidatedSubmission, config: MailgunConfi
     }
   }
 
-  const sender = submission.name ?? submission.email ?? "anonimo";
-  const tag = submission.formId ? ` (${submission.formId})` : "";
-  const subject = `[Heroic] Nuovo messaggio da ${sender}${tag}`;
+  if (template.brandName) {
+    lines.push("");
+    lines.push(`${labels.footer} ${template.brandName}.`);
+    htmlLines.push(
+      `<p style="margin-top:1.5rem;color:#888;font-size:0.85rem;">${labels.footer} <strong>${escapeHtml(template.brandName)}</strong>.</p>`,
+    );
+  }
+
+  const sender = senderLabel(submission, locale);
+  const subjectTemplate = template.subjectTemplate
+    ?? (submission.formId
+      ? "[Heroic] Nuovo messaggio da {sender} ({formId})"
+      : "[Heroic] Nuovo messaggio da {sender}");
+  const subject = renderSubject(subjectTemplate, {
+    sender,
+    name: submission.name ?? "",
+    email: submission.email ?? "",
+    formId: submission.formId ?? "",
+    brand: template.brandName ?? "",
+  });
 
   const email: BuiltEmail = {
     from: config.from,

@@ -1,6 +1,6 @@
 {
   "name": "@shardana/addon-contact-form",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Heroic Landing add-on: embeddable contact form that posts to a Lambda + Mailgun backend.",
   "license": "MIT",
   "homepage": "https://github.com/shardana-ai/addon-contact-form",

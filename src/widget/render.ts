@@ -7,6 +7,31 @@ import { getTranslations, type Translations } from "./i18n.js";
 
 export type WidgetMode = "inline" | "modal";
 
+/**
+ * Per-instance overrides for the widget's CSS variables. Each field maps
+ * to a `--cf-*` custom property; unset values fall back to the host
+ * page's Heroic theme tokens (`--color-accent` etc.) and finally to the
+ * widget's hardcoded defaults.
+ */
+export interface WidgetThemeOverrides {
+  /** Accent colour — submit + trigger background, focus outline. */
+  accent?: string;
+  /** Text colour on top of the accent (button label, icon). */
+  accentText?: string;
+  /** Modal panel background and form text fallback. */
+  background?: string;
+  /** Foreground text colour inside the modal/form. */
+  text?: string;
+  /** Input border colour (defaults to `text`). */
+  inputBorder?: string;
+  /** Input background colour (defaults to transparent). */
+  inputBackground?: string;
+  /** Input text colour (defaults to `text`). */
+  inputText?: string;
+  /** Muted colour for placeholders. */
+  muted?: string;
+}
+
 export interface WidgetConfig {
   formId: string;
   submitUrl: string;
@@ -24,6 +49,8 @@ export interface WidgetConfig {
   triggerLabel?: string;
   /** Custom title in the modal header. Defaults to a localized string. */
   modalTitle?: string;
+  /** Optional palette overrides — emitted as inline CSS variables. */
+  themeOverrides?: WidgetThemeOverrides;
 }
 
 const DEFAULT_FIELDS: FieldName[] = ["name", "email", "message"];
@@ -49,6 +76,16 @@ export function configFromDataset(dataset: DOMStringMap): WidgetConfig {
   const required = parseFields(dataset.required, DEFAULT_REQUIRED).filter((f) => fields.includes(f));
   const theme = dataset.theme === "dark" ? "dark" : "light";
   const mode: WidgetMode = dataset.mode === "modal" ? "modal" : "inline";
+  const themeOverrides: WidgetThemeOverrides = {
+    accent: dataset.accent,
+    accentText: dataset.accentText,
+    background: dataset.background,
+    text: dataset.textColor,
+    inputBorder: dataset.inputBorder,
+    inputBackground: dataset.inputBackground,
+    inputText: dataset.inputText,
+    muted: dataset.muted,
+  };
   return {
     formId: dataset.formId ?? "default",
     submitUrl: dataset.submitUrl ?? "",
@@ -62,7 +99,54 @@ export function configFromDataset(dataset: DOMStringMap): WidgetConfig {
     mode,
     triggerLabel: dataset.triggerLabel,
     modalTitle: dataset.modalTitle,
+    themeOverrides: hasAnyOverride(themeOverrides) ? themeOverrides : undefined,
   };
+}
+
+function hasAnyOverride(overrides: WidgetThemeOverrides): boolean {
+  return Object.values(overrides).some((v) => typeof v === "string" && v.length > 0);
+}
+
+/**
+ * Render the inline `style="--cf-…: value; …"` string from a
+ * `WidgetThemeOverrides`. Empty / missing fields are skipped so the CSS
+ * fallback chain still applies.
+ */
+export function buildThemeStyle(overrides: WidgetThemeOverrides | undefined): string {
+  if (!overrides) return "";
+  const map: Array<[string, string | undefined]> = [
+    ["--cf-accent", overrides.accent],
+    ["--cf-accent-text", overrides.accentText],
+    ["--cf-bg", overrides.background],
+    ["--cf-text", overrides.text],
+    ["--cf-input-border", overrides.inputBorder],
+    ["--cf-input-bg", overrides.inputBackground],
+    ["--cf-input-text", overrides.inputText],
+    ["--cf-muted", overrides.muted],
+  ];
+  return map
+    .filter(([, value]) => typeof value === "string" && value.length > 0)
+    .map(([prop, value]) => `${prop}: ${cssSanitize(value!)}`)
+    .join("; ");
+}
+
+// Lightweight sanitizer — colour values come from plan.yml, so authors
+// can pass `var(--color-accent)` as well as raw hex / rgb. We strip the
+// characters that would let a misbehaving value break out of the inline
+// style context (`;`, `<`, `>`, `}`).
+function cssSanitize(value: string): string {
+  return value.replace(/[;<>}]/g, "").trim();
+}
+
+/**
+ * Apply theme overrides as inline `style="--cf-…: value; …"` on the
+ * given element. No-op when the config has no overrides.
+ */
+function applyThemeStyle(el: HTMLElement, config: WidgetConfig): void {
+  const inline = buildThemeStyle(config.themeOverrides);
+  if (!inline) return;
+  const existing = el.getAttribute("style");
+  el.setAttribute("style", existing ? `${existing}; ${inline}` : inline);
 }
 
 const STYLE_ID = "shardana-contact-form-styles";
@@ -71,66 +155,98 @@ const ENVELOPE_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidde
 
 const CLOSE_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
 
+// Theming model
+// =============
+// All colours go through CSS variables (`--cf-*`) with cascading
+// fallbacks:
+//
+//   1. The host page can set them inline via plan.yml `params` — the
+//      widget emits `style="--cf-accent: #abc; …"` on each rendered
+//      element.
+//   2. Otherwise they fall back to the host's Heroic theme variables
+//      (`--color-accent`, `--color-bg`, `--color-text`) — set by the
+//      Astro template from `site.theme.palette`.
+//   3. Finally, hardcoded sensible defaults (slate / white) so the
+//      widget remains visible even on a vanilla page that has no
+//      theme tokens.
+//
+// Two compound vars derive automatically:
+//   --cf-accent-text  defaults to --color-bg (so the button label sits
+//                     well on the accent background) and falls back to
+//                     #fff.
+//   --cf-input-bg     defaults to transparent so inputs blend with the
+//                     panel.
 const STYLES = `
-.shardana-cf{display:flex;flex-direction:column;gap:0.85rem;font-family:inherit;color:inherit;}
-.shardana-cf__field{display:flex;flex-direction:column;gap:0.3rem;}
-.shardana-cf__label{font-size:0.85rem;font-weight:600;letter-spacing:0.02em;}
-.shardana-cf__input,.shardana-cf__textarea{
-  width:100%;padding:0.65rem 0.75rem;border:1px solid currentColor;border-radius:0.5rem;
-  background:transparent;color:inherit;font:inherit;
+.shardana-cf,.shardana-cf-trigger,.shardana-cf-modal{
+  /* Cascading defaults — overridable via inline style */
+  --cf-accent: var(--color-accent, #0f172a);
+  --cf-accent-text: var(--color-bg, #ffffff);
+  --cf-text: var(--color-text, currentColor);
+  --cf-muted: var(--color-muted, #64748b);
+  --cf-line: var(--color-line, currentColor);
+  --cf-bg: var(--color-bg, #ffffff);
+  --cf-input-bg: transparent;
+  --cf-input-border: var(--cf-line);
+  --cf-input-text: var(--cf-text);
+  --cf-error: #b00020;
+  --cf-success: #0a7c2a;
 }
-.shardana-cf__input:focus,.shardana-cf__textarea:focus{outline:2px solid currentColor;outline-offset:1px;}
+.shardana-cf{display:flex;flex-direction:column;gap:0.85rem;font-family:inherit;color:var(--cf-text);}
+.shardana-cf__field{display:flex;flex-direction:column;gap:0.3rem;}
+.shardana-cf__label{font-size:0.85rem;font-weight:600;letter-spacing:0.02em;color:var(--cf-text);}
+.shardana-cf__input,.shardana-cf__textarea{
+  width:100%;padding:0.65rem 0.75rem;border:1px solid var(--cf-input-border);border-radius:0.5rem;
+  background:var(--cf-input-bg);color:var(--cf-input-text);font:inherit;
+}
+.shardana-cf__input::placeholder,.shardana-cf__textarea::placeholder{color:var(--cf-muted);opacity:0.85;}
+.shardana-cf__input:focus,.shardana-cf__textarea:focus{outline:2px solid var(--cf-accent);outline-offset:1px;}
 .shardana-cf__textarea{min-height:7rem;resize:vertical;}
 .shardana-cf__honeypot{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;}
-.shardana-cf__error{color:#b00020;font-size:0.8rem;display:none;}
+.shardana-cf__error{color:var(--cf-error);font-size:0.8rem;display:none;}
 .shardana-cf__error.is-visible{display:block;}
 .shardana-cf__submit{
-  align-self:flex-start;border:0;cursor:pointer;padding:0.7rem 1.25rem;border-radius:0.5rem;
-  font:inherit;font-weight:600;background:currentColor;color:#fff;
+  align-self:flex-start;border:0;cursor:pointer;padding:0.7rem 1.4rem;border-radius:0.5rem;
+  font:inherit;font-weight:600;background:var(--cf-accent);color:var(--cf-accent-text);
 }
+.shardana-cf__submit:hover:not(:disabled){filter:brightness(1.08);}
 .shardana-cf__submit:disabled{opacity:0.6;cursor:wait;}
 .shardana-cf__status{font-size:0.9rem;margin-top:0.2rem;}
-.shardana-cf__status[data-state="success"]{color:#0a7c2a;}
-.shardana-cf__status[data-state="error"]{color:#b00020;}
-.shardana-cf--dark .shardana-cf__submit{color:#000;}
+.shardana-cf__status[data-state="success"]{color:var(--cf-success);}
+.shardana-cf__status[data-state="error"]{color:var(--cf-error);}
 
 /* Modal mode: trigger button + dialog */
 .shardana-cf-trigger{
   display:inline-flex;align-items:center;gap:0.6rem;cursor:pointer;border:0;
   font:inherit;font-weight:600;padding:0.75rem 1.4rem;border-radius:0.5rem;
-  background:currentColor;color:#fff;
+  background:var(--cf-accent);color:var(--cf-accent-text);
 }
-.shardana-cf-trigger > span{color:#fff;}
-.shardana-cf-trigger > svg{color:#fff;}
-.shardana-cf-trigger:hover{filter:brightness(1.05);}
-.shardana-cf-trigger:focus-visible{outline:2px solid currentColor;outline-offset:2px;}
-.shardana-cf--dark .shardana-cf-trigger,
-.shardana-cf--dark .shardana-cf-trigger > span,
-.shardana-cf--dark .shardana-cf-trigger > svg{color:#000;}
+.shardana-cf-trigger > span{color:var(--cf-accent-text);}
+.shardana-cf-trigger svg{color:var(--cf-accent-text);}
+.shardana-cf-trigger:hover{filter:brightness(1.08);}
+.shardana-cf-trigger:focus-visible{outline:2px solid var(--cf-accent);outline-offset:2px;}
 
 .shardana-cf-modal{
   border:0;padding:0;background:transparent;
   width:min(560px,calc(100vw - 2rem));max-height:calc(100vh - 4rem);
-  border-radius:0.75rem;overflow:visible;color:inherit;
+  border-radius:0.75rem;overflow:visible;
 }
 .shardana-cf-modal::backdrop{background:rgba(0,0,0,0.55);backdrop-filter:blur(2px);}
 .shardana-cf-modal__panel{
-  background:#fff;color:#111;border-radius:0.75rem;padding:1.5rem 1.5rem 1.25rem;
+  background:var(--cf-bg);color:var(--cf-text);border-radius:0.75rem;padding:1.5rem 1.5rem 1.25rem;
   display:flex;flex-direction:column;gap:1rem;
   box-shadow:0 25px 50px -12px rgba(0,0,0,0.35);
 }
-.shardana-cf-modal--dark .shardana-cf-modal__panel{background:#1a1a1a;color:#f4f4f4;}
 .shardana-cf-modal__header{
   display:flex;align-items:center;justify-content:space-between;gap:1rem;
 }
-.shardana-cf-modal__title{font-size:1.1rem;font-weight:700;margin:0;}
+.shardana-cf-modal__title{font-size:1.1rem;font-weight:700;margin:0;color:var(--cf-text);}
 .shardana-cf-modal__close{
-  background:transparent;border:0;cursor:pointer;color:inherit;
+  background:transparent;border:0;cursor:pointer;color:var(--cf-text);
   display:inline-flex;align-items:center;justify-content:center;
   width:2rem;height:2rem;border-radius:0.4rem;
 }
-.shardana-cf-modal__close:hover{background:rgba(0,0,0,0.08);}
-.shardana-cf-modal--dark .shardana-cf-modal__close:hover{background:rgba(255,255,255,0.12);}
+.shardana-cf-modal__close svg{color:var(--cf-text);}
+.shardana-cf-modal__close:hover{background:rgba(127,127,127,0.15);}
 `;
 
 export function ensureStyles(doc: Document): void {
@@ -149,6 +265,7 @@ export function buildForm(config: WidgetConfig, doc: Document): HTMLFormElement 
   form.setAttribute("novalidate", "");
   form.setAttribute("data-shardana-cf", "");
   form.setAttribute("data-form-id", config.formId);
+  applyThemeStyle(form, config);
 
   for (const field of config.fields) {
     form.appendChild(renderField(field, config, t, doc));
@@ -192,6 +309,7 @@ export function buildTrigger(config: WidgetConfig, doc: Document): HTMLButtonEle
   button.className = `shardana-cf-trigger shardana-cf--${config.theme}`;
   button.setAttribute("data-shardana-cf-trigger", "");
   button.setAttribute("data-form-id", config.formId);
+  applyThemeStyle(button, config);
 
   // SVG icon + text label. innerHTML is fine because the icon source is
   // constant and the label gets escapeHtml'd.
@@ -223,6 +341,7 @@ export function buildModal(
   dialog.className = `shardana-cf-modal shardana-cf-modal--${config.theme}`;
   dialog.setAttribute("data-shardana-cf-modal", "");
   dialog.setAttribute("aria-labelledby", `shardana-cf-title-${config.formId}`);
+  applyThemeStyle(dialog, config);
 
   const panel = doc.createElement("div");
   panel.className = "shardana-cf-modal__panel";

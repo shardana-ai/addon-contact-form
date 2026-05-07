@@ -2,10 +2,10 @@
   "$schema": "https://shardana.ai/schemas/addon-manifest.json",
   "id": "contact-form",
   "name": "Heroic Contact Form",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Self-hostable contact form. Drop the widget bundle on any CDN, deploy the single-tenant Lambda to your own AWS account, point the widget at it.",
   "injection": "script",
-  "src": "https://cdn.jsdelivr.net/gh/shardana-ai/addon-contact-form@v0.3.0/dist/widget/widget.global.js",
+  "src": "https://cdn.jsdelivr.net/gh/shardana-ai/addon-contact-form@v0.4.0/dist/widget/widget.global.js",
   "params": {
     "submitUrl": {
       "type": "string",
@@ -68,6 +68,38 @@
     "modalTitle": {
       "type": "string",
       "description": "Title rendered in the modal header. Defaults to a localized 'Write us a message' string."
+    },
+    "accent": {
+      "type": "string",
+      "description": "CSS color for the submit + trigger button background and focus ring. Accepts hex, rgb(), hsl(), or `var(--your-token)`. Defaults to `var(--color-accent)` if the host page exposes it, otherwise a slate fallback."
+    },
+    "accentText": {
+      "type": "string",
+      "description": "CSS color for text + icon on top of the accent background. Defaults to `var(--color-bg)` then white."
+    },
+    "background": {
+      "type": "string",
+      "description": "Modal panel background colour. Defaults to `var(--color-bg)` then white."
+    },
+    "textColor": {
+      "type": "string",
+      "description": "Foreground text colour inside the form / modal. Defaults to `var(--color-text)` then `currentColor`."
+    },
+    "muted": {
+      "type": "string",
+      "description": "Colour used for input placeholders. Defaults to `var(--color-muted)` then slate."
+    },
+    "inputBorder": {
+      "type": "string",
+      "description": "Input border colour. Defaults to `var(--color-line)` then `currentColor`."
+    },
+    "inputBackground": {
+      "type": "string",
+      "description": "Input background colour. Defaults to transparent (so inputs blend into the panel)."
+    },
+    "inputText": {
+      "type": "string",
+      "description": "Input text colour. Defaults to the form text colour."
     }
   },
   "homepage": "https://github.com/shardana-ai/addon-contact-form",

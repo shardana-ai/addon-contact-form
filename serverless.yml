@@ -48,6 +48,11 @@ provider:
     MAIL_TO: ${env:MAIL_TO}
     MAIL_REPLY_TO: ${env:MAIL_REPLY_TO, ''}
     ALLOWED_ORIGINS: ${env:ALLOWED_ORIGINS, '*'}
+    # Optional email customisation (see src/lambda/mailgun.ts for placeholders)
+    MAIL_SUBJECT_TEMPLATE: ${env:MAIL_SUBJECT_TEMPLATE, ''}
+    MAIL_BRAND_NAME: ${env:MAIL_BRAND_NAME, ''}
+    MAIL_INTRO: ${env:MAIL_INTRO, ''}
+    MAIL_LOCALE: ${env:MAIL_LOCALE, ''}
 
 package:
   individually: true

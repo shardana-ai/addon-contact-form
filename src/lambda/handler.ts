@@ -24,6 +24,25 @@ export interface HandlerEnv {
   ALLOWED_ORIGINS?: string;
   /** Optional EU endpoint override (`https://api.eu.mailgun.net`). */
   MAILGUN_BASE_URL?: string;
+  /**
+   * Optional subject template with placeholders `{sender}`, `{name}`,
+   * `{email}`, `{formId}`, `{brand}`. When unset, defaults to
+   * `[Heroic] Nuovo messaggio da {sender} ({formId})`.
+   */
+  MAIL_SUBJECT_TEMPLATE?: string;
+  /**
+   * Optional brand / business name. Appears in the email HTML footer
+   * ("Inviato dal sito di {brand}.") and is exposed as `{brand}` in
+   * `MAIL_SUBJECT_TEMPLATE`.
+   */
+  MAIL_BRAND_NAME?: string;
+  /** Optional preamble injected at the top of each email body. */
+  MAIL_INTRO?: string;
+  /**
+   * Default locale for the built-in field labels. The submission's
+   * `metadata.locale` overrides this when present.
+   */
+  MAIL_LOCALE?: string;
 }
 
 export interface HandlerDependencies {
@@ -88,6 +107,12 @@ export async function handleSubmission(
     from: env.MAIL_FROM,
     to: recipients.length === 1 ? recipients[0]! : recipients,
     replyTo: env.MAIL_REPLY_TO,
+    template: {
+      subjectTemplate: env.MAIL_SUBJECT_TEMPLATE,
+      brandName: env.MAIL_BRAND_NAME,
+      intro: env.MAIL_INTRO,
+      locale: env.MAIL_LOCALE,
+    },
   };
 
   try {
