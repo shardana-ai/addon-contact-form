@@ -53,8 +53,10 @@ export function buildEmail(submission: ValidatedSubmission, config: MailgunConfi
   const lines: string[] = [];
   const htmlLines: string[] = [];
 
-  lines.push(`Form: ${submission.formId}`);
-  htmlLines.push(`<p><strong>Form:</strong> ${escapeHtml(submission.formId)}</p>`);
+  if (submission.formId) {
+    lines.push(`Form: ${submission.formId}`);
+    htmlLines.push(`<p><strong>Form:</strong> ${escapeHtml(submission.formId)}</p>`);
+  }
 
   if (submission.name) {
     lines.push(`Nome: ${submission.name}`);
@@ -87,7 +89,9 @@ export function buildEmail(submission: ValidatedSubmission, config: MailgunConfi
     }
   }
 
-  const subject = `[Heroic] Nuovo messaggio da ${submission.name ?? submission.email ?? "anonimo"} (${submission.formId})`;
+  const sender = submission.name ?? submission.email ?? "anonimo";
+  const tag = submission.formId ? ` (${submission.formId})` : "";
+  const subject = `[Heroic] Nuovo messaggio da ${sender}${tag}`;
 
   const email: BuiltEmail = {
     from: config.from,

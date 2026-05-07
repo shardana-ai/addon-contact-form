@@ -1,13 +1,24 @@
 # Serverless Framework config for the contact-form Lambda.
 #
-# Deploy:
-#   pnpm install
-#   pnpm build
+# One deploy = one form. Configure the recipient mapping with env vars at
+# deploy time; there is no central registry.
+#
+#   export MAILGUN_DOMAIN=mg.example.com
+#   export MAILGUN_API_KEY=key-...
+#   export MAIL_FROM="no-reply@example.com"
+#   export MAIL_TO="owner@example.com"
+#   # optional
+#   export MAIL_REPLY_TO="support@example.com"
+#   export MAILGUN_BASE_URL="https://api.eu.mailgun.net"
+#   export ALLOWED_ORIGINS="https://my-landing.example,https://www.my-landing.example"
+#
+#   pnpm install && pnpm build
 #   serverless deploy --stage prod --region eu-south-1
 #
-# The function expects the build output at dist/lambda/submit.cjs. Run
-# `pnpm build` (which calls tsup) before `serverless deploy`.
-service: shardana-contact-form
+# The Lambda handler reads MAIL_FROM / MAIL_TO directly — no mapping
+# layer between the request and the recipient.
+
+service: contact-form
 
 frameworkVersion: "3"
 
@@ -22,9 +33,7 @@ provider:
   logRetentionInDays: 30
   httpApi:
     cors:
-      allowedOrigins:
-        - https://landing.shardana.ai
-        - https://*.landing.shardana.ai
+      allowedOrigins: ${env:ALLOWED_ORIGINS_LIST, '*'}
       allowedMethods:
         - POST
         - OPTIONS
@@ -35,8 +44,10 @@ provider:
     MAILGUN_DOMAIN: ${env:MAILGUN_DOMAIN}
     MAILGUN_API_KEY: ${env:MAILGUN_API_KEY}
     MAILGUN_BASE_URL: ${env:MAILGUN_BASE_URL, ''}
+    MAIL_FROM: ${env:MAIL_FROM}
+    MAIL_TO: ${env:MAIL_TO}
+    MAIL_REPLY_TO: ${env:MAIL_REPLY_TO, ''}
     ALLOWED_ORIGINS: ${env:ALLOWED_ORIGINS, '*'}
-    FORM_REGISTRY: ${env:FORM_REGISTRY}
 
 package:
   individually: true

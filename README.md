@@ -1,34 +1,116 @@
 # addon-contact-form
 
-Embeddable **contact form** add-on for [Heroic Landing](https://landing.shardana.ai)
-(and any other static site that wants a Mailgun-backed form). Implements the
-[Heroic add-on contract](https://github.com/shardana-ai/addon-injector/blob/main/docs/addon-contract.md):
-ships a `<script>` widget plus an AWS Lambda submit handler.
+A self-hostable **contact form** add-on. Two artefacts in one repo:
 
-- **Widget**: ~3.7 KB gzip, vanilla TypeScript, no framework dependencies.
-- **Backend**: AWS Lambda + API Gateway HTTP API, forwards submissions to
-  Mailgun. Strict per-`formId` allowlist so the endpoint cannot be reused
-  for arbitrary inboxes.
-- **Honeypot + payload validation** with Zod — bots and oversized payloads
-  are rejected at the edge.
-- **i18n built in**: it / en / de / fr / es. Override individual strings
-  via `data-*` attributes.
+- A **vanilla TypeScript widget** (~3.7 KB gzip) that auto-mounts from
+  `data-*` attributes on its own `<script>` tag.
+- A **single-tenant AWS Lambda** that forwards submissions to Mailgun.
+  One deploy = one form. No central registry, no hosted dependency:
+  every operator runs their own Lambda in their own AWS account.
 
-The package is open source (MIT). You can use the **hosted instance**
-operated by shardana.ai (`forms.shardana.ai`) or **self-host** the Lambda
-on your own AWS account.
+Implements the
+[Heroic add-on contract](https://github.com/shardana-ai/addon-injector/blob/main/docs/addon-contract.md),
+so it plugs straight into `@shardana/addon-injector`. The widget is
+framework-agnostic — drop it on any static site, not just a Heroic landing.
+
+License: [MIT](./LICENSE).
 
 ---
 
-## Quick start (hosted)
+## Architecture
 
-Add the script to your page and let it auto-mount:
+```
+                                            Mailgun
+                                              ▲
+   ┌───────────┐   POST JSON   ┌──────────────────────────┐
+   │  widget   │──────────────▶│  Lambda submit.cjs       │
+   │  (script) │   1.          │                          │
+   │           │               │  reads MAIL_FROM/MAIL_TO │
+   │  drop on  │◀──────────────│  from env vars at deploy│
+   │  any site │   ok / error  │  time, no DB, no cache  │
+   └───────────┘   2.          └──────────────────────────┘
+```
+
+**Why single-tenant?** A multi-tenant Lambda needs a registry, and a
+registry needs a control plane. That removes the "drop in and go" property.
+With one Lambda per form, the recipient address is plain config and the
+endpoint URL is the unforgeable identifier — anyone who has the URL can
+submit, but only the operator who deployed it can change where the email
+goes.
+
+**What about spam?** Honeypot + size limits + CORS allowlist + Zod payload
+validation. The form is small enough that a target-by-name attack is the
+worst case — solvable with rate limiting at the API Gateway level if it
+matters.
+
+---
+
+## Quick start
+
+You need:
+
+1. A Mailgun account with a verified sending domain.
+2. An AWS account with the Serverless Framework set up.
+3. Node 20 + pnpm to build the artefacts.
+
+### 1. Install + build
+
+```bash
+git clone https://github.com/shardana-ai/addon-contact-form
+cd addon-contact-form
+pnpm install
+pnpm build
+# dist/widget/widget.global.js   3.7 KB gzipped
+# dist/lambda/submit.cjs         Lambda handler bundle
+```
+
+### 2. Configure + deploy the Lambda
+
+Set environment variables in your shell (or a `.env`-like loader your CI
+uses):
+
+```bash
+export MAILGUN_DOMAIN=mg.example.com
+export MAILGUN_API_KEY=key-...                    # secret, do NOT commit
+export MAIL_FROM="no-reply@example.com"           # must be authorized by MAILGUN_DOMAIN
+export MAIL_TO="owner@example.com"                # comma-separated for multiple recipients
+export MAIL_REPLY_TO="support@example.com"        # optional, defaults to the submitter's email
+export ALLOWED_ORIGINS="https://my-landing.example,https://www.my-landing.example"
+# export MAILGUN_BASE_URL="https://api.eu.mailgun.net"   # only for EU Mailgun accounts
+
+serverless deploy --stage prod --region eu-south-1
+```
+
+Output looks like:
+
+```
+endpoints:
+  POST - https://abcd1234.execute-api.eu-south-1.amazonaws.com/v1/submit
+  OPTIONS - https://abcd1234.execute-api.eu-south-1.amazonaws.com/v1/submit
+```
+
+That URL is the only piece of state you need to keep.
+
+### 3. Host the widget bundle
+
+The widget is a single IIFE file. Pick whichever delivery suits you:
+
+- **GitHub release (free, recommended)**: tag a release on this repo and
+  the bundle is served by jsDelivr at
+  `https://cdn.jsdelivr.net/gh/<your-fork-or-shardana-ai>/addon-contact-form@<tag>/dist/widget/widget.global.js`.
+- **S3 + CloudFront**: copy `dist/widget/widget.global.js` to your bucket
+  behind a CDN. Set `Cache-Control: public, max-age=31536000, immutable`
+  for the versioned path.
+- **Same origin**: serve it from your landing's own domain to avoid
+  third-party requests entirely.
+
+### 4. Drop the script tag on your page
 
 ```html
 <script
-  src="https://forms.shardana.ai/v1/widget.js"
-  data-form-id="my-restaurant"
-  data-submit-url="https://forms.shardana.ai/v1/submit"
+  src="https://cdn.jsdelivr.net/gh/shardana-ai/addon-contact-form@v0.2.0/dist/widget/widget.global.js"
+  data-submit-url="https://abcd1234.execute-api.eu-south-1.amazonaws.com/v1/submit"
+  data-form-id="my-landing"
   data-fields="name,email,message"
   data-locale="it"
   data-theme="light"
@@ -36,161 +118,77 @@ Add the script to your page and let it auto-mount:
 ></script>
 ```
 
-Or wire it through `@shardana/addon-injector` from `plan.yml`:
+The widget self-mounts where the script tag sits (or wherever
+`data-target` points). On submit it POSTs to `data-submit-url`; success
+shows a localized confirmation, errors a localized fallback.
+
+### 5. (optional) Wire it through `@shardana/addon-injector`
+
+If your site uses `plan.yml` and the Heroic addon contract:
 
 ```yaml
 addons:
   - id: contact-form
     enabled: true
     injection: script
-    src: https://forms.shardana.ai/v1/widget.js
+    src: https://cdn.jsdelivr.net/gh/shardana-ai/addon-contact-form@v0.2.0/dist/widget/widget.global.js
     params:
-      formId: my-restaurant
-      submitUrl: https://forms.shardana.ai/v1/submit
-      fields: name,email,message
+      submitUrl: https://abcd1234.execute-api.eu-south-1.amazonaws.com/v1/submit
+      formId: my-landing
+      fields: name,email,phone,message
+      required: name,email,message
       locale: it
       theme: light
+      target: "#contatti"
 ```
-
-The widget mounts the form just before its own script tag by default. Pass
-`data-target="#my-section"` (or `target` in `plan.yml`'s `params`) to mount
-it inside a specific element.
 
 ---
 
-## Configuration
+## Configuration reference
 
-All options are read from `data-*` attributes on the script tag. They map
-1:1 to the manifest in [`addon-manifest.json`](./addon-manifest.json).
+All widget options are read from `data-*` attributes on the script tag —
+they map 1:1 to the `params` block in [`addon-manifest.json`](./addon-manifest.json).
 
-| Attribute               | Required | Default                    | Notes                                                                                  |
-|-------------------------|----------|----------------------------|----------------------------------------------------------------------------------------|
-| `data-form-id`          | yes      | —                          | Stable id registered server-side. The Lambda refuses unknown ids.                      |
-| `data-submit-url`       | yes      | —                          | API endpoint that receives the JSON submission.                                        |
-| `data-fields`           | no       | `name,email,message`       | Comma-separated subset of `name,email,phone,message`.                                  |
-| `data-required`         | no       | same as `data-fields`      | Subset of `data-fields` that is required.                                              |
-| `data-locale`           | no       | `it`                       | One of `it`, `en`, `de`, `fr`, `es`.                                                   |
-| `data-theme`            | no       | `light`                    | `light` or `dark`.                                                                     |
-| `data-target`           | no       | parent of the script tag   | CSS selector of the mount node.                                                        |
-| `data-success-message`  | no       | localized                  | Override the success copy.                                                             |
-| `data-error-message`    | no       | localized                  | Override the error copy.                                                               |
-| `data-honeypot-name`    | no       | `website`                  | Hidden field name. Bots fill every input; the server rejects when this is non-empty.   |
+| Attribute              | Required | Default                  | Notes                                                                                |
+|------------------------|----------|--------------------------|--------------------------------------------------------------------------------------|
+| `data-submit-url`      | yes      | —                        | API endpoint of your Lambda.                                                         |
+| `data-form-id`         | no       | —                        | Tag added to the email subject + metadata. Useful when one inbox handles many forms. |
+| `data-fields`          | no       | `name,email,message`     | Comma-separated subset of `name,email,phone,message`.                                |
+| `data-required`        | no       | same as `data-fields`    | Subset of `data-fields` that is required.                                            |
+| `data-locale`          | no       | `it`                     | One of `it`, `en`, `de`, `fr`, `es`.                                                 |
+| `data-theme`           | no       | `light`                  | `light` or `dark`.                                                                   |
+| `data-target`          | no       | parent of the script tag | CSS selector of the mount node.                                                      |
+| `data-success-message` | no       | localized                | Override the success copy.                                                           |
+| `data-error-message`   | no       | localized                | Override the error copy.                                                             |
+| `data-honeypot-name`   | no       | `website`                | Hidden field name. Bots fill every input; the server rejects when this is non-empty. |
 
-The form sends a JSON payload to `data-submit-url`:
+The form posts JSON to `data-submit-url`:
 
 ```json
 {
-  "formId": "my-restaurant",
+  "formId": "my-landing",
   "name": "Mario Rossi",
   "email": "mario@example.com",
   "message": "Vorrei prenotare un tavolo per quattro.",
-  "metadata": { "locale": "it", "source": "https://my-restaurant.example/" },
+  "metadata": { "locale": "it", "source": "https://my-landing.example/" },
   "website": ""
 }
 ```
 
-The Lambda validates the payload, looks up `formId` in its registry, and
-forwards the submission to Mailgun.
+### Lambda environment variables
 
----
+| Variable           | Required | Purpose                                                                                       |
+|--------------------|----------|-----------------------------------------------------------------------------------------------|
+| `MAILGUN_DOMAIN`   | yes      | Mailgun sending domain (e.g. `mg.example.com`).                                               |
+| `MAILGUN_API_KEY`  | yes      | Mailgun secret API key.                                                                       |
+| `MAIL_FROM`        | yes      | "From" address. Must belong to `MAILGUN_DOMAIN` or be authorised by it.                       |
+| `MAIL_TO`          | yes      | Recipient(s). Comma-separated for multiple addresses.                                         |
+| `MAIL_REPLY_TO`    | no       | Override the Reply-To header. Defaults to the submitter's email when present.                 |
+| `ALLOWED_ORIGINS`  | no       | Comma-separated CORS allowlist. Defaults to `*`. Strongly recommended in production.          |
+| `MAILGUN_BASE_URL` | no       | EU endpoint override (`https://api.eu.mailgun.net`). Defaults to the US endpoint.             |
 
-## Self-hosting
-
-You will deploy two pieces:
-
-1. The **widget bundle** (`dist/widget/widget.global.js`) — host it on any CDN
-   (e.g. CloudFront in front of an S3 bucket) and update `data-src` on the
-   script tag to point at it.
-2. The **Lambda submit handler** (`dist/lambda/submit.cjs`) — deploy to AWS
-   with the included `serverless.yml`.
-
-### 1. Build
-
-```bash
-pnpm install
-pnpm build
-# dist/widget/widget.global.js   ~3.7 KB gzipped
-# dist/lambda/submit.cjs         Lambda handler bundle
-```
-
-### 2. Configure environment
-
-Set the following environment variables when deploying:
-
-| Variable           | Purpose                                                                                                                  |
-|--------------------|--------------------------------------------------------------------------------------------------------------------------|
-| `MAILGUN_DOMAIN`   | Mailgun sending domain (e.g. `mg.shardana.ai`).                                                                          |
-| `MAILGUN_API_KEY`  | Mailgun secret API key.                                                                                                  |
-| `MAILGUN_BASE_URL` | Optional. `https://api.eu.mailgun.net` for EU accounts. Defaults to the US endpoint.                                     |
-| `ALLOWED_ORIGINS`  | Comma-separated list of origins allowed by CORS, or `*`. Defaults to `*`.                                                |
-| `FORM_REGISTRY`    | JSON map `{ "<formId>": { "from": "...", "to": "...", "replyTo": "..." } }`. The handler rejects formIds not in the map. |
-
-`FORM_REGISTRY` example:
-
-```json
-{
-  "my-restaurant": {
-    "from": "no-reply@my-restaurant.example",
-    "to": "owner@my-restaurant.example",
-    "replyTo": "support@my-restaurant.example"
-  },
-  "another-client": {
-    "from": "no-reply@another.example",
-    "to": ["owner@another.example", "manager@another.example"]
-  }
-}
-```
-
-Without an entry the Lambda returns `404 Unknown formId` — that is what
-prevents `forms.shardana.ai` from being used as a free email-relay.
-
-### 3. Deploy with Serverless Framework
-
-```bash
-serverless deploy --stage prod --region eu-south-1
-```
-
-The included `serverless.yml` provisions an HTTP API Gateway with CORS
-restricted to `landing.shardana.ai` and `*.landing.shardana.ai`. Tweak the
-`allowedOrigins` list for your own domains.
-
-### 4. Point the widget at your endpoint
-
-```html
-<script
-  src="https://your-cdn.example/widget.js"
-  data-form-id="my-restaurant"
-  data-submit-url="https://api.your-domain.example/v1/submit"
-  defer
-></script>
-```
-
----
-
-## Architecture
-
-```
-                                          Mailgun
-                                            ▲
-   ┌───────────┐   POST JSON   ┌──────────────────────┐
-   │  widget   │──────────────▶│  Lambda submit.cjs   │
-   │  (script) │   1.          │  (validate +         │
-   │           │◀──────────────│   per-formId guard + │
-   │  shards   │   ok / error  │   Mailgun POST)      │
-   │  shadow-  │   2.          └──────────────────────┘
-   │  free     │
-   │  styles   │
-   └───────────┘
-```
-
-**Why a per-formId registry?** A public submit endpoint without one becomes
-an open mail relay. The registry binds each `formId` to a specific
-`from`/`to` pair so customers cannot impersonate each other and bots
-cannot reuse the URL.
-
-**Why a honeypot?** Real users do not see the `website` (hidden) input.
-Bots that fill every field hit the schema constraint and get rejected —
-no CAPTCHA, no extra friction for humans.
+The Lambda will return `500 Missing required env var: …` if any of the
+four required variables is unset.
 
 ---
 
@@ -199,31 +197,21 @@ no CAPTCHA, no extra friction for humans.
 ```bash
 pnpm install
 pnpm typecheck   # tsc --noEmit, strict mode
-pnpm test        # vitest, 49 tests
+pnpm test        # vitest, 50 tests
 pnpm build       # tsup → dist/widget/widget.global.js + dist/lambda/submit.cjs
 ```
 
 Tests cover:
 
-- **Payload schema** — required formId, email format, length limits, honeypot, trim.
-- **Mailgun client** — pure email construction, HTTP transport with mocked fetch, EU base URL, error propagation.
-- **Lambda handler** — happy path, malformed payload, honeypot, unknown formId, registry replyTo.
-- **Widget render** — field allowlist, locale strings, dark theme, single stylesheet injection, input types.
-- **Widget submit** — client-side validation, fetch contract, server error surfaces.
-- **End-to-end** — happy-dom form filled by the user → widget → Lambda contract → mocked Mailgun.
+- **Payload schema** (7) — required-field guards, email format, length limits, honeypot rejection, trim.
+- **Mailgun client** (8) — pure email construction, HTML escape, EU base URL, transport with mocked fetch.
+- **Lambda handler** (11) — happy path, payload errors, honeypot, missing env vars, Reply-To fallback, multi-recipient.
+- **Widget render** (12) — field allowlist, locale strings, dark theme, single-stylesheet idempotency, input types.
+- **Widget submit** (8) — client-side validation, JSON contract, server error surface.
+- **End-to-end** (4) — happy-dom form filled by the user → widget → Lambda contract → mocked Mailgun.
 
----
-
-## Public infrastructure
-
-The hosted instance run by shardana.ai is reachable at:
-
-- Widget: `https://forms.shardana.ai/v1/widget.js`
-- Submit: `https://forms.shardana.ai/v1/submit`
-
-To register a new `formId` on the hosted instance, open an issue or contact
-shardana.ai. The hosted endpoint is meant for Heroic Landing customers; for
-arbitrary use cases please self-host.
+`.github/workflows/ci.yml` runs typecheck + build + tests + a 6 KB gzip
+guard for the widget bundle on every push and pull request.
 
 ---
 

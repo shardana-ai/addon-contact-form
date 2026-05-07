@@ -38,9 +38,8 @@ const widgetConfig = {
 const handlerEnv: HandlerEnv = {
   MAILGUN_DOMAIN: "mg.example.com",
   MAILGUN_API_KEY: "key-test",
-  FORM_REGISTRY: JSON.stringify({
-    "da-giulia": { from: "no-reply@example.com", to: "owner@example.com" },
-  }),
+  MAIL_FROM: "no-reply@example.com",
+  MAIL_TO: "owner@example.com",
 };
 
 describe("end-to-end: widget → submitUrl → Lambda → Mailgun", () => {
@@ -84,19 +83,20 @@ describe("end-to-end: widget → submitUrl → Lambda → Mailgun", () => {
     expect((form.querySelector('input[name="name"]') as HTMLInputElement).value).toBe("");
   });
 
-  it("server rejects an unknown formId with 404 and the widget surfaces an error", async () => {
-    const form = buildForm({ ...widgetConfig, formId: "unknown" }, document);
+  it("widget surfaces an error when the Lambda is misconfigured (missing MAIL_TO)", async () => {
+    const form = buildForm(widgetConfig, document);
     document.body.appendChild(form);
 
+    const brokenEnv: HandlerEnv = { ...handlerEnv, MAIL_TO: "" };
     const mailgunFetch = vi.fn() as unknown as typeof fetch;
     const widgetFetch = vi.fn(async (_url: unknown, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
-      const result = await handleSubmission(handlerEnv, body, { fetchImpl: mailgunFetch });
+      const result = await handleSubmission(brokenEnv, body, { fetchImpl: mailgunFetch });
       return new Response(JSON.stringify(result.ok ? result : { ok: false, error: result.error }), {
         status: result.status,
       });
     }) as unknown as typeof fetch;
-    attachSubmitHandler(form, { ...widgetConfig, formId: "unknown" }, { fetchImpl: widgetFetch });
+    attachSubmitHandler(form, widgetConfig, { fetchImpl: widgetFetch });
 
     (form.querySelector('input[name="name"]') as HTMLInputElement).value = "X";
     (form.querySelector('input[name="email"]') as HTMLInputElement).value = "x@x.com";

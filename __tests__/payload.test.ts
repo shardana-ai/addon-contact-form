@@ -9,8 +9,9 @@ describe("submissionPayloadSchema", () => {
     expect(parsed.website).toBe("");
   });
 
-  it("rejects missing formId", () => {
-    expect(submissionPayloadSchema.safeParse({ message: "x" }).success).toBe(false);
+  it("accepts a payload without formId (it is optional metadata)", () => {
+    const result = submissionPayloadSchema.safeParse({ message: "x" });
+    expect(result.success).toBe(true);
   });
 
   it("rejects malformed email", () => {

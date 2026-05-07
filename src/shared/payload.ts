@@ -10,7 +10,9 @@ export { allowedFields, type FieldName } from "./fields.js";
 const trimmedString = (max: number) => z.string().trim().min(1).max(max);
 
 export const submissionPayloadSchema = z.object({
-  formId: z.string().min(1).max(64),
+  // Optional tag for the email subject + metadata. Single-tenant Lambdas
+  // do not route on this field; it is purely informational.
+  formId: z.string().min(1).max(64).optional(),
   // Honeypot field. Bots fill every visible input — we add a hidden one and
   // reject the request if it is non-empty. Real users never see it.
   website: z.string().max(0).optional().default(""),

@@ -1,10 +1,10 @@
-// AWS Lambda handler exposed via API Gateway. Validates the submission,
-// enforces per-formId allowlists (so customers can't reuse forms.shardana.ai
-// for arbitrary domains) and forwards to Mailgun.
+// AWS Lambda handler exposed via API Gateway. One Lambda = one form: the
+// recipient address is configured at deploy time via env vars, not via a
+// central registry. This keeps the addon truly self-hostable — anyone can
+// `serverless deploy` to their own AWS account and own the endpoint.
 //
-// The handler is split from the side-effects: `handleSubmission(env, body)`
-// is pure-ish (only does network I/O via injected fetch) and is what the
-// tests exercise. `handler` is the Lambda glue.
+// `handleSubmission(env, body, deps)` is the pure entry point exercised by
+// tests; `handler` is the AWS glue.
 
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import { ZodError } from "zod";
@@ -14,48 +14,42 @@ import { sendEmail, type MailgunConfig } from "./mailgun.js";
 export interface HandlerEnv {
   MAILGUN_DOMAIN: string;
   MAILGUN_API_KEY: string;
-  /** Comma-separated list of allowed Origin header prefixes for CORS. `*` allows all. */
+  /** "From" address used by Mailgun. Must belong to MAILGUN_DOMAIN or be authorised by it. */
+  MAIL_FROM: string;
+  /** Recipient(s). Comma-separated when more than one. */
+  MAIL_TO: string;
+  /** Optional explicit Reply-To. Falls back to the submitter's email. */
+  MAIL_REPLY_TO?: string;
+  /** Comma-separated list of allowed Origin header values for CORS. `*` allows all. */
   ALLOWED_ORIGINS?: string;
-  /** Optional EU endpoint override. */
+  /** Optional EU endpoint override (`https://api.eu.mailgun.net`). */
   MAILGUN_BASE_URL?: string;
-  /**
-   * JSON-encoded map { formId: { from, to, replyTo? } }. Customers register
-   * each formId in the admin panel; the handler refuses unknown ids so that
-   * forms.shardana.ai cannot be used to spam arbitrary inboxes.
-   */
-  FORM_REGISTRY: string;
 }
-
-export interface FormRegistryEntry {
-  from: string;
-  to: string | string[];
-  replyTo?: string;
-}
-
-export type FormRegistry = Record<string, FormRegistryEntry>;
 
 export interface HandlerDependencies {
   fetchImpl?: typeof fetch;
-  /** Override `Date.now()` in tests for stable rate-limit windows. */
-  now?: () => number;
 }
 
 export type SubmissionResult =
   | { ok: true; status: 200; messageId: string }
-  | { ok: false; status: 400 | 403 | 404 | 500; error: string; details?: unknown };
+  | { ok: false; status: 400 | 500; error: string; details?: unknown };
 
-export function parseRegistry(raw: string | undefined): FormRegistry {
-  if (!raw) return {};
-  const parsed = JSON.parse(raw) as FormRegistry;
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error("FORM_REGISTRY must be a JSON object");
+function splitList(value: string | undefined): string[] {
+  if (!value) return [];
+  return value.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+function assertEnv(env: HandlerEnv): void {
+  const required: Array<keyof HandlerEnv> = ["MAILGUN_DOMAIN", "MAILGUN_API_KEY", "MAIL_FROM", "MAIL_TO"];
+  for (const key of required) {
+    if (!env[key]) throw new Error(`Missing required env var: ${key}`);
   }
-  return parsed;
 }
 
 /**
- * Pure entry point. Runs validation, enforces honeypot + registry, sends
- * the email, and returns a structured result.
+ * Pure entry point. Validates the payload, runs the honeypot check, and
+ * forwards the email via Mailgun. The recipient mapping is fixed by
+ * deployment-time env vars — there is no per-request lookup.
  */
 export async function handleSubmission(
   env: HandlerEnv,
@@ -72,7 +66,6 @@ export async function handleSubmission(
     return { ok: false, status: 400, error: "Invalid JSON" };
   }
 
-  // Honeypot — bots fill every field, real users never see `website`.
   if (submission.website && submission.website.length > 0) {
     return { ok: false, status: 400, error: "Submission rejected" };
   }
@@ -81,19 +74,20 @@ export async function handleSubmission(
     return { ok: false, status: 400, error: "At least one of name/email/message is required" };
   }
 
-  const registry = parseRegistry(env.FORM_REGISTRY);
-  const entry = registry[submission.formId];
-  if (!entry) {
-    return { ok: false, status: 404, error: `Unknown formId: ${submission.formId}` };
+  try {
+    assertEnv(env);
+  } catch (err) {
+    return { ok: false, status: 500, error: (err as Error).message };
   }
 
+  const recipients = splitList(env.MAIL_TO);
   const config: MailgunConfig = {
     domain: env.MAILGUN_DOMAIN,
     apiKey: env.MAILGUN_API_KEY,
     baseUrl: env.MAILGUN_BASE_URL,
-    from: entry.from,
-    to: entry.to,
-    replyTo: entry.replyTo,
+    from: env.MAIL_FROM,
+    to: recipients.length === 1 ? recipients[0]! : recipients,
+    replyTo: env.MAIL_REPLY_TO,
   };
 
   try {
@@ -106,7 +100,7 @@ export async function handleSubmission(
 
 function corsHeaders(env: HandlerEnv, origin: string | undefined): Record<string, string> {
   const allowed = env.ALLOWED_ORIGINS ?? "*";
-  const list = allowed.split(",").map((s) => s.trim()).filter(Boolean);
+  const list = splitList(allowed);
   const allowOrigin = list.includes("*") || (origin && list.includes(origin)) ? origin ?? "*" : list[0] ?? "*";
   return {
     "Access-Control-Allow-Origin": allowOrigin,

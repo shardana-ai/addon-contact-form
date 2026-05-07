@@ -2,20 +2,19 @@
   "$schema": "https://shardana.ai/schemas/addon-manifest.json",
   "id": "contact-form",
   "name": "Heroic Contact Form",
-  "version": "0.1.0",
-  "description": "Embeddable contact form that posts submissions to a Lambda + Mailgun backend.",
+  "version": "0.2.0",
+  "description": "Self-hostable contact form. Drop the widget bundle on any CDN, deploy the single-tenant Lambda to your own AWS account, point the widget at it.",
   "injection": "script",
-  "src": "https://forms.shardana.ai/v1/widget.js",
+  "src": "https://cdn.jsdelivr.net/gh/shardana-ai/addon-contact-form@v0.2.0/dist/widget/widget.global.js",
   "params": {
-    "formId": {
-      "type": "string",
-      "required": true,
-      "description": "Unique form identifier registered in the admin panel; the Lambda refuses unknown ids."
-    },
     "submitUrl": {
       "type": "string",
       "required": true,
-      "description": "Lambda endpoint that receives the JSON submission."
+      "description": "Endpoint of your contact-form Lambda (e.g. https://<api-id>.execute-api.<region>.amazonaws.com/v1/submit)."
+    },
+    "formId": {
+      "type": "string",
+      "description": "Optional tag added to the email subject. Useful when one operator handles multiple landings; the Lambda does NOT route on this field."
     },
     "fields": {
       "type": "string",
