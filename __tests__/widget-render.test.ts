@@ -22,6 +22,7 @@ const baseConfig = {
   locale: "it",
   theme: "light" as const,
   honeypotName: "website",
+  mode: "inline" as const,
 };
 
 describe("parseFields", () => {

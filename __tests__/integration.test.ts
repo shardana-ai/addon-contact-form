@@ -33,6 +33,7 @@ const widgetConfig = {
   locale: "it",
   theme: "light" as const,
   honeypotName: "website",
+  mode: "inline" as const,
 };
 
 const handlerEnv: HandlerEnv = {

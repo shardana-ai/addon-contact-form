@@ -1,7 +1,6 @@
 {
   "name": "@shardana/addon-contact-form",
-  "version": "0.2.0",
-  "private": false,
+  "version": "0.3.0",
   "description": "Heroic Landing add-on: embeddable contact form that posts to a Lambda + Mailgun backend.",
   "license": "MIT",
   "homepage": "https://github.com/shardana-ai/addon-contact-form",
@@ -18,12 +17,20 @@
     "LICENSE"
   ],
   "exports": {
-    "./manifest": "./addon-manifest.json"
+    "./manifest": "./addon-manifest.json",
+    "./widget": "./dist/widget/widget.global.js",
+    "./lambda": {
+      "types": "./src/lambda/handler.ts",
+      "import": "./src/lambda/handler.ts"
+    },
+    "./payload": {
+      "types": "./src/shared/payload.ts",
+      "import": "./src/shared/payload.ts"
+    }
   },
   "scripts": {
+    "prepare": "tsup",
     "build": "tsup",
-    "build:widget": "tsup --config tsup.widget.config.ts",
-    "build:lambda": "tsup --config tsup.lambda.config.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "deploy": "serverless deploy"
@@ -43,7 +50,6 @@
     "@types/aws-lambda": "^8.10.145",
     "@types/node": "^20.16.5",
     "happy-dom": "^15.7.4",
-    "serverless": "^3.39.0",
     "tsup": "^8.3.0",
     "typescript": "^5.5.4",
     "vitest": "^2.1.1"

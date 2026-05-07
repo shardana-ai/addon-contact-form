@@ -1,14 +1,25 @@
-// Bootstrap: find the script tag, read its dataset, build the form, wire
-// up submit handler. Pure DOM glue — render and submit are tested in
-// isolation.
+// Bootstrap: find the script tag, read its dataset, build the form (or the
+// modal-mode trigger + dialog), wire up submit + close handlers. Pure DOM
+// glue — `render.ts` and `submit.ts` are tested in isolation.
 
 import type { FieldName } from "../shared/fields.js";
-import { buildForm, configFromDataset, type WidgetConfig } from "./render.js";
+import {
+  buildForm,
+  buildModal,
+  buildTrigger,
+  configFromDataset,
+  type WidgetConfig,
+} from "./render.js";
 import { clientValidate, submitForm } from "./submit.js";
 import { getTranslations } from "./i18n.js";
 
 export interface MountOptions {
   fetchImpl?: typeof fetch;
+  /**
+   * Delay (ms) before the modal closes after a successful submit, so the
+   * user can read the success message. Default 1500.
+   */
+  modalAutoCloseDelay?: number;
 }
 
 export function findMountTarget(scriptEl: HTMLScriptElement, doc: Document): Element {
@@ -17,17 +28,38 @@ export function findMountTarget(scriptEl: HTMLScriptElement, doc: Document): Ele
     const found = doc.querySelector(selector);
     if (found) return found;
   }
-  // Default: insert just before the script tag's parent's closing element.
-  // This puts the form at the location where the AddonInjector emitted the
-  // script, which on a Heroic landing is below the footer — customers can
-  // override via data-target.
   return scriptEl.parentElement ?? doc.body;
 }
 
-export function mountFromScript(scriptEl: HTMLScriptElement, options: MountOptions = {}): HTMLFormElement {
+export interface MountResult {
+  form: HTMLFormElement;
+  /** Set in `modal` mode only. */
+  trigger?: HTMLButtonElement;
+  /** Set in `modal` mode only. */
+  dialog?: HTMLDialogElement;
+}
+
+export function mountFromScript(scriptEl: HTMLScriptElement, options: MountOptions = {}): MountResult {
   const doc = scriptEl.ownerDocument ?? document;
   const config = configFromDataset(scriptEl.dataset);
   const target = findMountTarget(scriptEl, doc);
+
+  if (config.mode === "modal") {
+    const { dialog, form, closeButton } = buildModal(config, doc);
+    const trigger = buildTrigger(config, doc);
+    attachSubmitHandler(form, config, options, dialog);
+    attachModalHandlers(trigger, dialog, closeButton);
+
+    if (target === scriptEl.parentElement) {
+      scriptEl.insertAdjacentElement("beforebegin", trigger);
+      scriptEl.insertAdjacentElement("beforebegin", dialog);
+    } else {
+      target.appendChild(trigger);
+      target.appendChild(dialog);
+    }
+    return { form, trigger, dialog };
+  }
+
   const form = buildForm(config, doc);
   attachSubmitHandler(form, config, options);
   if (target === scriptEl.parentElement) {
@@ -35,13 +67,55 @@ export function mountFromScript(scriptEl: HTMLScriptElement, options: MountOptio
   } else {
     target.appendChild(form);
   }
-  return form;
+  return { form };
+}
+
+/**
+ * Wire the modal trigger + close button + backdrop click. Uses the native
+ * `<dialog>` API so ESC dismissal is free.
+ */
+export function attachModalHandlers(
+  trigger: HTMLButtonElement,
+  dialog: HTMLDialogElement,
+  closeButton: HTMLButtonElement,
+): void {
+  trigger.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (typeof dialog.showModal === "function") {
+      dialog.showModal();
+    } else {
+      // happy-dom (and very old browsers) may lack showModal — fall back
+      // to setting the `open` attribute so the dialog at least becomes
+      // visible.
+      dialog.setAttribute("open", "");
+    }
+  });
+
+  closeButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    closeDialog(dialog);
+  });
+
+  // Backdrop click: dialogs receive click events on themselves when the
+  // user clicks outside the inner panel.
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) closeDialog(dialog);
+  });
+}
+
+function closeDialog(dialog: HTMLDialogElement): void {
+  if (typeof dialog.close === "function") {
+    dialog.close();
+  } else {
+    dialog.removeAttribute("open");
+  }
 }
 
 export function attachSubmitHandler(
   form: HTMLFormElement,
   config: WidgetConfig,
   options: MountOptions = {},
+  dialog?: HTMLDialogElement,
 ): void {
   const t = getTranslations(config.locale);
   form.addEventListener("submit", async (event) => {
@@ -55,8 +129,6 @@ export function attachSubmitHandler(
       return;
     }
 
-    // Honeypot — never sent normally, but if present we still forward it so
-    // the server can reject in case the script tag is misconfigured.
     const honeypot = readNamedValue(form, config.honeypotName);
 
     const submitButton = form.querySelector<HTMLButtonElement>(".shardana-cf__submit");
@@ -78,6 +150,12 @@ export function attachSubmitHandler(
       status.dataset.state = "success";
       status.textContent = config.successMessage ?? t.success;
       form.reset();
+      // In modal mode, close the dialog after a brief pause so the user
+      // sees the confirmation message before it disappears.
+      if (dialog) {
+        const delay = options.modalAutoCloseDelay ?? 1500;
+        setTimeout(() => closeDialog(dialog), delay);
+      }
     } else {
       status.dataset.state = "error";
       status.textContent = config.errorMessage ?? t.error;

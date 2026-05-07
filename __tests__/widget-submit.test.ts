@@ -10,6 +10,7 @@ const config: WidgetConfig = {
   locale: "it",
   theme: "light",
   honeypotName: "website",
+  mode: "inline",
 };
 
 describe("clientValidate", () => {

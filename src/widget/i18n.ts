@@ -13,6 +13,12 @@ export interface Translations {
   error: string;
   required: string;
   invalidEmail: string;
+  /** Default text on the modal-mode trigger button. */
+  triggerLabel: string;
+  /** Title rendered in the modal header. */
+  modalTitle: string;
+  /** Aria-label / tooltip on the modal close button. */
+  closeLabel: string;
 }
 
 const it: Translations = {
@@ -29,6 +35,9 @@ const it: Translations = {
   error: "Si è verificato un errore. Riprova fra qualche istante.",
   required: "Campo obbligatorio",
   invalidEmail: "Email non valida",
+  triggerLabel: "Contattaci",
+  modalTitle: "Scrivici un messaggio",
+  closeLabel: "Chiudi",
 };
 
 const en: Translations = {
@@ -40,6 +49,9 @@ const en: Translations = {
   error: "Something went wrong. Please try again in a moment.",
   required: "Required field",
   invalidEmail: "Invalid email address",
+  triggerLabel: "Contact us",
+  modalTitle: "Write us a message",
+  closeLabel: "Close",
 };
 
 const de: Translations = {
@@ -51,6 +63,9 @@ const de: Translations = {
   error: "Etwas ist schiefgelaufen. Bitte erneut versuchen.",
   required: "Pflichtfeld",
   invalidEmail: "Ungültige E-Mail",
+  triggerLabel: "Kontaktiere uns",
+  modalTitle: "Schreib uns eine Nachricht",
+  closeLabel: "Schließen",
 };
 
 const fr: Translations = {
@@ -62,6 +77,9 @@ const fr: Translations = {
   error: "Une erreur s'est produite. Veuillez réessayer.",
   required: "Champ obligatoire",
   invalidEmail: "Email invalide",
+  triggerLabel: "Contactez-nous",
+  modalTitle: "Écrivez-nous un message",
+  closeLabel: "Fermer",
 };
 
 const es: Translations = {
@@ -73,6 +91,9 @@ const es: Translations = {
   error: "Algo salió mal. Vuelve a intentarlo en un momento.",
   required: "Campo obligatorio",
   invalidEmail: "Email no válido",
+  triggerLabel: "Contáctanos",
+  modalTitle: "Escríbenos un mensaje",
+  closeLabel: "Cerrar",
 };
 
 const TABLE: Record<SupportedLocale, Translations> = { it, en, de, fr, es };
