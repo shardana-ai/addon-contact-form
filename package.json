@@ -12,6 +12,7 @@
   "type": "module",
   "files": [
     "dist",
+    "src",
     "addon-manifest.json",
     "README.md",
     "LICENSE"
