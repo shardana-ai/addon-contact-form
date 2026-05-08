@@ -19,6 +19,8 @@ export interface Translations {
   modalTitle: string;
   /** Aria-label / tooltip on the modal close button. */
   closeLabel: string;
+  /** Aria-label prefix for the phone shortcut button (e.g. "Call"). */
+  callLabel: string;
 }
 
 const it: Translations = {
@@ -38,6 +40,7 @@ const it: Translations = {
   triggerLabel: "Contattaci",
   modalTitle: "Scrivici un messaggio",
   closeLabel: "Chiudi",
+  callLabel: "Chiama",
 };
 
 const en: Translations = {
@@ -52,6 +55,7 @@ const en: Translations = {
   triggerLabel: "Contact us",
   modalTitle: "Write us a message",
   closeLabel: "Close",
+  callLabel: "Call",
 };
 
 const de: Translations = {
@@ -66,6 +70,7 @@ const de: Translations = {
   triggerLabel: "Kontaktiere uns",
   modalTitle: "Schreib uns eine Nachricht",
   closeLabel: "Schließen",
+  callLabel: "Anrufen",
 };
 
 const fr: Translations = {
@@ -80,6 +85,7 @@ const fr: Translations = {
   triggerLabel: "Contactez-nous",
   modalTitle: "Écrivez-nous un message",
   closeLabel: "Fermer",
+  callLabel: "Appeler",
 };
 
 const es: Translations = {
@@ -94,6 +100,7 @@ const es: Translations = {
   triggerLabel: "Contáctanos",
   modalTitle: "Escríbenos un mensaje",
   closeLabel: "Cerrar",
+  callLabel: "Llamar",
 };
 
 const TABLE: Record<SupportedLocale, Translations> = { it, en, de, fr, es };

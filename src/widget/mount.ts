@@ -4,9 +4,9 @@
 
 import type { FieldName } from "../shared/fields.js";
 import {
+  buildActionGroup,
   buildForm,
   buildModal,
-  buildTrigger,
   configFromDataset,
   type WidgetConfig,
 } from "./render.js";
@@ -37,6 +37,10 @@ export interface MountResult {
   trigger?: HTMLButtonElement;
   /** Set in `modal` mode only. */
   dialog?: HTMLDialogElement;
+  /** Set in `modal` mode only — wraps the trigger and (if configured) the phone shortcut. */
+  actions?: HTMLDivElement;
+  /** Set when `params.phoneNumber` is configured. */
+  phone?: HTMLAnchorElement;
 }
 
 export function mountFromScript(scriptEl: HTMLScriptElement, options: MountOptions = {}): MountResult {
@@ -46,18 +50,18 @@ export function mountFromScript(scriptEl: HTMLScriptElement, options: MountOptio
 
   if (config.mode === "modal") {
     const { dialog, form, closeButton } = buildModal(config, doc);
-    const trigger = buildTrigger(config, doc);
+    const { actions, trigger, phone } = buildActionGroup(config, doc);
     attachSubmitHandler(form, config, options, dialog);
     attachModalHandlers(trigger, dialog, closeButton);
 
     if (target === scriptEl.parentElement) {
-      scriptEl.insertAdjacentElement("beforebegin", trigger);
+      scriptEl.insertAdjacentElement("beforebegin", actions);
       scriptEl.insertAdjacentElement("beforebegin", dialog);
     } else {
-      target.appendChild(trigger);
+      target.appendChild(actions);
       target.appendChild(dialog);
     }
-    return { form, trigger, dialog };
+    return { form, trigger, dialog, actions, phone: phone ?? undefined };
   }
 
   const form = buildForm(config, doc);

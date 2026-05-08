@@ -4,7 +4,14 @@
 // Also exposes `window.ShardanaContactForm.mount(scriptElement)` for
 // programmatic mounting (e.g. SPA pages that load the form into a modal).
 
-import { buildForm, buildModal, buildTrigger, configFromDataset } from "./render.js";
+import {
+  buildActionGroup,
+  buildForm,
+  buildModal,
+  buildPhoneButton,
+  buildTrigger,
+  configFromDataset,
+} from "./render.js";
 import {
   mountFromScript,
   attachSubmitHandler,
@@ -18,6 +25,8 @@ const api = {
   buildForm,
   buildModal,
   buildTrigger,
+  buildPhoneButton,
+  buildActionGroup,
   attachSubmitHandler,
   attachModalHandlers,
   configFromDataset,

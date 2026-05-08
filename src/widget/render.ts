@@ -51,6 +51,18 @@ export interface WidgetConfig {
   modalTitle?: string;
   /** Optional palette overrides — emitted as inline CSS variables. */
   themeOverrides?: WidgetThemeOverrides;
+  /**
+   * In `modal` mode, render the trigger as an icon-only square button
+   * (envelope SVG without text label). Default `false` (icon + label).
+   */
+  iconOnly?: boolean;
+  /**
+   * Optional phone number rendered as a sibling button next to the
+   * mail trigger. Click → `tel:` link, fires the OS phone app /
+   * Skype / FaceTime. Should be a tel-friendly string (e.g. `+393332627187`).
+   * When unset, no phone button is rendered.
+   */
+  phoneNumber?: string;
 }
 
 const DEFAULT_FIELDS: FieldName[] = ["name", "email", "message"];
@@ -97,6 +109,8 @@ export function configFromDataset(dataset: DOMStringMap): WidgetConfig {
     errorMessage: dataset.errorMessage,
     honeypotName: dataset.honeypotName ?? "website",
     mode,
+    iconOnly: dataset.iconOnly === "true",
+    phoneNumber: dataset.phoneNumber,
     triggerLabel: dataset.triggerLabel,
     modalTitle: dataset.modalTitle,
     themeOverrides: hasAnyOverride(themeOverrides) ? themeOverrides : undefined,
@@ -154,6 +168,8 @@ const STYLE_ID = "shardana-contact-form-styles";
 const ENVELOPE_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/><path d="m22 8-10 6L2 8"/></svg>';
 
 const CLOSE_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+
+const PHONE_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
 
 // Theming model
 // =============
@@ -214,16 +230,30 @@ const STYLES = `
 .shardana-cf__status[data-state="success"]{color:var(--cf-success);}
 .shardana-cf__status[data-state="error"]{color:var(--cf-error);}
 
-/* Modal mode: trigger button + dialog */
-.shardana-cf-trigger{
+/* Modal mode: actions row (trigger button + optional phone shortcut) */
+.shardana-cf-actions{
+  display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;justify-content:flex-start;
+}
+.shardana-cf-trigger,.shardana-cf-phone{
   display:inline-flex;align-items:center;gap:0.6rem;cursor:pointer;border:0;
   font:inherit;font-weight:600;padding:0.75rem 1.4rem;border-radius:0.5rem;
   background:var(--cf-accent);color:var(--cf-accent-text);
+  text-decoration:none;
 }
-.shardana-cf-trigger > span{color:var(--cf-accent-text);}
-.shardana-cf-trigger svg{color:var(--cf-accent-text);}
-.shardana-cf-trigger:hover{filter:brightness(1.08);}
-.shardana-cf-trigger:focus-visible{outline:2px solid var(--cf-accent);outline-offset:2px;}
+.shardana-cf-trigger > span,.shardana-cf-phone > span{color:var(--cf-accent-text);}
+.shardana-cf-trigger svg,.shardana-cf-phone svg{color:var(--cf-accent-text);}
+.shardana-cf-trigger:hover,.shardana-cf-phone:hover{filter:brightness(1.08);}
+.shardana-cf-trigger:focus-visible,.shardana-cf-phone:focus-visible{
+  outline:2px solid var(--cf-accent);outline-offset:2px;
+}
+/* Icon-only variant: square button, no padding around the label. */
+.shardana-cf-trigger.is-icon-only,.shardana-cf-phone.is-icon-only{
+  padding:0.65rem;width:2.75rem;height:2.75rem;justify-content:center;
+}
+.shardana-cf-trigger.is-icon-only > span:not([aria-hidden="true"]),
+.shardana-cf-phone.is-icon-only > span:not([aria-hidden="true"]){
+  position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;
+}
 
 .shardana-cf-modal{
   border:0;padding:0;background:transparent;
@@ -306,13 +336,15 @@ export function buildTrigger(config: WidgetConfig, doc: Document): HTMLButtonEle
   const t = getTranslations(config.locale);
   const button = doc.createElement("button");
   button.type = "button";
-  button.className = `shardana-cf-trigger shardana-cf--${config.theme}`;
+  button.className = `shardana-cf-trigger shardana-cf--${config.theme}${config.iconOnly ? " is-icon-only" : ""}`;
   button.setAttribute("data-shardana-cf-trigger", "");
   button.setAttribute("data-form-id", config.formId);
   applyThemeStyle(button, config);
 
-  // SVG icon + text label. innerHTML is fine because the icon source is
-  // constant and the label gets escapeHtml'd.
+  // SVG icon + text label. The label is always present in the DOM for
+  // accessibility (screen readers); when `iconOnly` is true the CSS
+  // hides it visually but still exposes it as the button's accessible
+  // name (we also set aria-label as a belt-and-braces).
   const labelText = config.triggerLabel ?? t.triggerLabel;
   const iconSpan = doc.createElement("span");
   iconSpan.setAttribute("aria-hidden", "true");
@@ -324,6 +356,59 @@ export function buildTrigger(config: WidgetConfig, doc: Document): HTMLButtonEle
   button.appendChild(labelSpan);
   button.setAttribute("aria-label", labelText);
   return button;
+}
+
+/**
+ * Render a phone shortcut button next to the modal trigger. It's a plain
+ * `<a href="tel:...">` styled to match the trigger — clicking it triggers
+ * the OS phone app on mobile, FaceTime / Skype / etc. on desktop. The
+ * widget never opens a modal for this button; the dialing is handled by
+ * the OS.
+ */
+export function buildPhoneButton(config: WidgetConfig, doc: Document): HTMLAnchorElement | null {
+  if (!config.phoneNumber) return null;
+  ensureStyles(doc);
+  const t = getTranslations(config.locale);
+  const link = doc.createElement("a");
+  // Strip everything but `+` and digits for the tel: URI; the visible
+  // label keeps the user-friendly format.
+  const telDigits = config.phoneNumber.replace(/[^+\d]/g, "");
+  link.href = `tel:${telDigits}`;
+  link.className = `shardana-cf-phone shardana-cf--${config.theme}${config.iconOnly ? " is-icon-only" : ""}`;
+  link.setAttribute("data-shardana-cf-phone", "");
+  applyThemeStyle(link, config);
+
+  const ariaLabel = `${t.callLabel} ${config.phoneNumber}`;
+  const iconSpan = doc.createElement("span");
+  iconSpan.setAttribute("aria-hidden", "true");
+  iconSpan.style.display = "inline-flex";
+  iconSpan.innerHTML = PHONE_SVG;
+  const labelSpan = doc.createElement("span");
+  labelSpan.textContent = config.phoneNumber;
+  link.appendChild(iconSpan);
+  link.appendChild(labelSpan);
+  link.setAttribute("aria-label", ariaLabel);
+  return link;
+}
+
+/**
+ * Build a flex container that holds the modal trigger and (optionally)
+ * the phone shortcut. Mounting them through this wrapper keeps them on
+ * one line and makes per-instance CSS targeting easy
+ * (`.shardana-cf-actions`).
+ */
+export function buildActionGroup(config: WidgetConfig, doc: Document): { actions: HTMLDivElement; trigger: HTMLButtonElement; phone: HTMLAnchorElement | null } {
+  ensureStyles(doc);
+  const actions = doc.createElement("div");
+  actions.className = `shardana-cf-actions shardana-cf--${config.theme}`;
+  actions.setAttribute("data-shardana-cf-actions", "");
+  applyThemeStyle(actions, config);
+
+  const trigger = buildTrigger(config, doc);
+  const phone = buildPhoneButton(config, doc);
+  actions.appendChild(trigger);
+  if (phone) actions.appendChild(phone);
+  return { actions, trigger, phone };
 }
 
 /**

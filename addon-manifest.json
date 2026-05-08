@@ -2,10 +2,10 @@
   "$schema": "https://shardana.ai/schemas/addon-manifest.json",
   "id": "contact-form",
   "name": "Heroic Contact Form",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Self-hostable contact form. Drop the widget bundle on any CDN, deploy the single-tenant Lambda to your own AWS account, point the widget at it.",
   "injection": "script",
-  "src": "https://cdn.jsdelivr.net/gh/shardana-ai/addon-contact-form@v0.4.0/dist/widget/widget.global.js",
+  "src": "https://cdn.jsdelivr.net/gh/shardana-ai/addon-contact-form@v0.5.0/dist/widget/widget.global.js",
   "params": {
     "submitUrl": {
       "type": "string",
@@ -68,6 +68,15 @@
     "modalTitle": {
       "type": "string",
       "description": "Title rendered in the modal header. Defaults to a localized 'Write us a message' string."
+    },
+    "iconOnly": {
+      "type": "boolean",
+      "default": false,
+      "description": "In `modal` mode, render the trigger as an icon-only square button (envelope SVG without text). The label is preserved as the accessible name (aria-label + visually-hidden span)."
+    },
+    "phoneNumber": {
+      "type": "string",
+      "description": "Optional phone number rendered as a sibling action button next to the mail trigger. Click → `tel:` link. Use the dial-friendly format (e.g. `+393332627187`)."
     },
     "accent": {
       "type": "string",
